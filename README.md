@@ -1,135 +1,182 @@
-# Kong Docker deployment
+# Kong Gateway Docker
 
-Kong API Gateway deployment with Docker Compose - The most popular open-source API Gateway built for multi-cloud and hybrid architectures.
+[![Kong](https://img.shields.io/badge/Kong-3.9-003459?logo=kong&logoColor=white)](https://konghq.com/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-336791?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![Docker](https://img.shields.io/badge/Docker_Compose-2.x-2496ED?logo=docker&logoColor=white)](https://docs.docker.com/compose/)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-## Overview
+Production-ready Kong API Gateway deployment with Docker Compose.
 
-Kong serves as a scalable, open-source API Gateway that sits in front of your services. It offers powerful features including:
+## Features
 
-- Authentication
-- Rate Limiting
-- Traffic Control
-- Analytics
-- Plugin Extensibility
-- Load Balancing
-- Health Checks
-- API Transformations
-- AI Gateway capabilities (3.9+)
+- **Authentication** - JWT, OAuth2, API keys, and more
+- **Rate Limiting** - Protect backend services from abuse
+- **Traffic Control** - Request/response transformations
+- **Load Balancing** - Distribute traffic across multiple backends
+- **Health Checks** - Active and passive health monitoring
+- **Plugin Ecosystem** - 100+ official and community plugins
+- **AI Gateway** - Native LLM provider integration (Kong 3.9+)
 
-![Kong Docker Setup](./screenshot.png)
-*Kong Docker deployment architecture overview*
+## Requirements
 
-## Status
-
-This deployment is production ready.
-
-## Versions
-
-| Component | Version |
-|-----------|---------|
-| Kong Gateway | 3.9 |
-| PostgreSQL | 17-alpine |
+- Docker Engine 20.10+
+- Docker Compose 2.0+
+- 2GB RAM minimum
 
 ## Quick Start
 
 ```bash
-cp default.env .env
 ./setup.sh
 ```
 
-This will execute all the necessary steps (database setup, migrations, and Kong startup) automatically.
+The setup script will:
+1. Create `.env` from `default.env` if not present
+2. Start PostgreSQL database
+3. Run database migrations
+4. Launch Kong Gateway
 
-## Manual Deployment
+## Endpoints
+
+| Service | HTTP | HTTPS |
+|---------|------|-------|
+| Proxy | `:8000` | `:8443` |
+| Admin API | `:8001` | `:8444` |
+| Kong Manager | `:8002` | `:8445` |
+
+Verify the installation:
 
 ```bash
-docker-compose up -d kong-database    # Start database
-docker-compose run --rm kong-migrations  # Run migrations
-docker-compose up -d kong              # Start Kong
+curl http://localhost:8001/status
 ```
-
-**Endpoints after startup:**
-
-| Service | URL |
-|---------|-----|
-| Kong Proxy | http://localhost:8000 |
-| Kong Proxy SSL | https://localhost:8443 |
-| Kong Admin API | http://localhost:8001 |
-| Kong Admin API SSL | https://localhost:8444 |
-| Kong Manager | http://localhost:8002 |
-| Kong Manager SSL | https://localhost:8445 |
 
 ## Configuration
 
-Copy `default.env` to `.env` and customize:
+### Environment Variables
+
+Copy and edit the environment file:
 
 ```bash
 cp default.env .env
 ```
 
-| Variable | Default |
-|----------|---------|
-| `KONG_VERSION` | 3.9 |
-| `KONG_PG_DATABASE` | kong |
-| `KONG_PG_USER` | kong |
-| `KONG_PG_PASSWORD` | kong |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `KONG_VERSION` | `3.9` | Kong Gateway version |
+| `KONG_PG_DATABASE` | `kong` | PostgreSQL database name |
+| `KONG_PG_USER` | `kong` | PostgreSQL username |
+| `KONG_PG_PASSWORD` | `kong` | PostgreSQL password |
+
+### Declarative Configuration
+
+Place Kong configuration in `config/kong.yaml`:
+
+```yaml
+_format_version: "3.0"
+
+services:
+  - name: my-service
+    url: https://api.example.com
+    routes:
+      - name: my-route
+        paths:
+          - /api
+```
 
 ## Architecture
 
 ```
-kong-database (PostgreSQL 17)
-       ↓
-kong-migrations (one-shot bootstrap)
-       ↓
-kong (Gateway 3.9)
+┌─────────────────┐
+│  kong-database  │  PostgreSQL 17 (persistent storage)
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ kong-migrations │  Database schema bootstrap
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│      kong       │  Kong Gateway 3.9 (read-only container)
+└─────────────────┘
 ```
 
-Docker's `depends_on` with health check conditions ensures proper startup order:
-- `kong-database` starts first with health check
-- `kong-migrations` waits for database to be healthy
-- `kong` waits for migrations to complete successfully
+Container dependencies use health check conditions to ensure proper startup ordering.
 
-## Health Checks
+## Operations
+
+### Start Services
 
 ```bash
-curl http://localhost:8001/status
-docker-compose ps
+docker compose up -d
 ```
 
-## Upgrading Kong
+### Stop Services
 
-> **WARNING**: This may require downtime.
+```bash
+docker compose down
+```
+
+### View Logs
+
+```bash
+docker compose logs -f kong
+```
+
+### Backup Database
+
+```bash
+docker exec kong-database pg_dump -U kong kong > backup.sql
+```
+
+### Restore Database
+
+```bash
+cat backup.sql | docker exec -i kong-database psql -U kong kong
+```
+
+## Upgrade
+
+> **Note**: Upgrades may require service downtime. Always backup before upgrading.
 
 1. Update `KONG_VERSION` in `.env`
 2. Run migrations:
-   ```bash
-   docker-compose run --rm kong kong migrations up --vv
-   docker-compose run --rm kong kong migrations finish --vv
-   ```
-3. Restart Kong:
-   ```bash
-   docker-compose up -d kong
-   ```
-
-## Backup & Recovery
 
 ```bash
-docker exec kong-database pg_dump -U kong kong > kong_backup.sql
+docker compose run --rm kong kong migrations up --vv
+docker compose run --rm kong kong migrations finish --vv
 ```
 
-## Security Considerations
+3. Restart Kong:
 
-- Change default passwords in production
-- Use SSL/TLS for all external connections
-- Restrict Admin API access (8001/8444) to trusted networks
-- Kong runs with read-only filesystem and `no-new-privileges`
+```bash
+docker compose up -d kong
+```
 
-## 🏢 RACKSYNC CO., LTD.
+## Security
 
-RACKSYNC Co., Ltd. specializes in automation and smart solutions. We provide comprehensive consulting services and technical implementation for both residential and commercial projects.
+This deployment implements several security measures:
 
-📍 Suratthani, Thailand 84000
-📧 devops@racksync.com
-📞 +66 85 880 8885
+- Read-only container filesystem
+- `no-new-privileges` security option
+- Config directory mounted read-only
+- tmpfs volumes for runtime data
 
-[![Discord](https://img.shields.io/discord/986181205504438345?style=for-the-badge)](https://discord.gg/Wc5CwnWkp4)
-[![GitHub](https://img.shields.io/github/followers/racksync?style=for-the-badge)](https://github.com/racksync)
+### Production Checklist
+
+- [ ] Change default database credentials
+- [ ] Enable TLS certificates for all endpoints
+- [ ] Restrict Admin API access to trusted networks
+- [ ] Configure firewall rules for exposed ports
+- [ ] Set up log aggregation and monitoring
+
+## License
+
+MIT License - See [LICENSE](LICENSE) for details.
+
+---
+
+<p align="center">
+  <a href="https://racksync.com">
+    <img src="https://img.shields.io/badge/RACKSYNC-Automation_Solutions-blue?style=flat-square" alt="RACKSYNC">
+  </a>
+</p>
