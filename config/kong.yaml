@@ -1,0 +1,16 @@
+_format_version: "3.0"
+
+# Example services and routes (uncomment to use)
+# services:
+#   - name: example-service
+#     url: http://httpbin.org
+#     routes:
+#       - name: example-route
+#         paths:
+#           - /example
+
+# plugins:
+#   - name: rate-limiting
+#     config:
+#       minute: 100
+#       policy: local

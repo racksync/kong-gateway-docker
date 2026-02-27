@@ -1,16 +1,20 @@
+name: kong-gateway
+
 networks:
   kong-net:
-    external: false
+    driver: bridge
 
 x-kong-config:
   &kong-env
-  KONG_PG_DATABASE: ${KONG_PG_DATABASE:-kong}
+  KONG_DATABASE: postgres
   KONG_PG_HOST: kong-database
+  KONG_PG_DATABASE: ${KONG_PG_DATABASE:-kong}
   KONG_PG_USER: ${KONG_PG_USER:-kong}
   KONG_PG_PASSWORD: ${KONG_PG_PASSWORD:-kong}
 
 volumes:
-  kong_data: {}
+  kong_data:
+    driver: local
   kong_prefix_vol:
     driver_opts:
       type: tmpfs
@@ -23,27 +27,17 @@ volumes:
 services:
   kong-database:
     container_name: kong-database
-    image: postgres:16.2
+    image: postgres:17-alpine
     environment:
       POSTGRES_DB: ${KONG_PG_DATABASE:-kong}
       POSTGRES_USER: ${KONG_PG_USER:-kong}
       POSTGRES_PASSWORD: ${KONG_PG_PASSWORD:-kong}
     healthcheck:
-      test:
-        [
-          "CMD",
-          "pg_isready",
-          "-d",
-          "${KONG_PG_DATABASE:-kong}",
-          "-U",
-          "${KONG_PG_USER:-kong}"
-        ]
-      interval: 30s
-      timeout: 30s
-      retries: 3
-    restart: on-failure
-    stdin_open: true
-    tty: true
+      test: ["CMD-SHELL", "pg_isready -d ${KONG_PG_DATABASE:-kong} -U ${KONG_PG_USER:-kong}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
     networks:
       - kong-net
     volumes:
@@ -53,10 +47,11 @@ services:
 
   kong-migrations:
     container_name: kong-migrations
-    image: kong:3.6
+    image: kong:${KONG_VERSION:-3.9}
     command: kong migrations bootstrap
     depends_on:
-      - kong-database
+      kong-database:
+        condition: service_healthy
     environment:
       <<: *kong-env
     networks:
@@ -65,19 +60,21 @@ services:
 
   kong:
     container_name: kong
-    image: kong:3.6
-    user: "${KONG_USER:-kong}"
+    image: kong:${KONG_VERSION:-3.9}
     environment:
       <<: *kong-env
-      KONG_ADMIN_ACCESS_LOG: /dev/stdout
-      KONG_ADMIN_ERROR_LOG: /dev/stderr
       KONG_PROXY_LISTEN: 0.0.0.0:8000, 0.0.0.0:8443 ssl
       KONG_ADMIN_LISTEN: 0.0.0.0:8001, 0.0.0.0:8444 ssl
-      KONG_ADMIN_GUI_LISTEN: "${KONG_ADMIN_GUI_LISTEN:-0.0.0.0:8002}"
+      KONG_ADMIN_GUI_LISTEN: 0.0.0.0:8002, 0.0.0.0:8445 ssl
       KONG_PROXY_ACCESS_LOG: /dev/stdout
       KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
       KONG_PREFIX: ${KONG_PREFIX:-/var/run/kong}
-      KONG_DECLARATIVE_CONFIG: "/opt/kong/kong.yaml"
+      KONG_DECLARATIVE_CONFIG: /opt/kong/kong.yaml
+    depends_on:
+      kong-migrations:
+        condition: service_completed_successfully
     networks:
       - kong-net
     ports:
@@ -86,18 +83,17 @@ services:
       - "8001:8001"
       - "8444:8444"
       - "8002:8002"
+      - "8445:8445"
     healthcheck:
-      test: [ "CMD", "kong", "health" ]
+      test: ["CMD", "kong", "health"]
       interval: 10s
       timeout: 10s
       retries: 10
-    restart: on-failure:5
+    restart: unless-stopped
     read_only: true
-    depends_on:
-      - kong-database
     volumes:
       - kong_prefix_vol:${KONG_PREFIX:-/var/run/kong}
       - kong_tmp_vol:/tmp
-      - ./config:/opt/kong
+      - ./config:/opt/kong:ro
     security_opt:
       - no-new-privileges
