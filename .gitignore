@@ -1,2 +1,11 @@
+# OS
 .DS_Store
 **/.DS_Store
+
+# AI assistants
+.claude/
+.cursor/
+.cursorrules
+.github/copilot-instructions.md
+.aider*
+.copilot/
